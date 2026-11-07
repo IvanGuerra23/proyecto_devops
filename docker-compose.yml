@@ -1,0 +1,76 @@
+name: crud-docker
+
+services:
+  db:
+    image: mysql:8.4
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-rootpass}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-devops_db}
+      MYSQL_USER: ${MYSQL_USER:-devops}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-devops123}
+    ports:
+      - "${MYSQL_PORT:-3307}:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "mysqladmin ping -h 127.0.0.1 -u root -p\"$$MYSQL_ROOT_PASSWORD\" --silent",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    networks:
+      - backend
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: crud-docker-app:latest
+    restart: unless-stopped
+    environment:
+      SECRET_KEY: ${SECRET_KEY:-dev-secret-cambiar-en-produccion}
+      DATABASE_URL: "mysql+pymysql://${MYSQL_USER:-devops}:${MYSQL_PASSWORD:-devops123}@db:3306/${MYSQL_DATABASE:-devops_db}?charset=utf8mb4"
+      SEED_DATA: ${SEED_DATA:-true}
+    ports:
+      - "${APP_PORT:-5000}:5000"
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import sys, urllib.request; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:5000/health', timeout=3).status == 200 else 1)",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks:
+      - backend
+
+  adminer:
+    image: adminer:4
+    restart: unless-stopped
+    profiles: ["tools"]
+    ports:
+      - "${ADMINER_PORT:-8081}:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - backend
+
+volumes:
+  mysql_data:
+
+networks:
+  backend:
+    driver: bridge
