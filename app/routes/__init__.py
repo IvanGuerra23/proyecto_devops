@@ -5,9 +5,11 @@ from .cursos import cursos_bp
 from .estudiantes import estudiantes_bp
 from .health import health_bp
 from .inscripciones import inscripciones_bp
+from .ui import ui_bp
 
 
 def register_blueprints(app) -> None:
+    app.register_blueprint(ui_bp)
     app.register_blueprint(health_bp)
     app.register_blueprint(carreras_bp)
     app.register_blueprint(cursos_bp)

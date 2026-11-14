@@ -84,3 +84,81 @@ curl http://localhost:5000/estudiantes
 - Introducir migraciones con Flask-Migrate.
 - Publicar la imagen en un registry y documentar el despliegue.
 - Añadir observabilidad (logs estructurados/métricas) y análisis de imagen.
+
+---
+
+## 2026-11-13 — Avance 2: CRUD completo e interfaz gráfica
+
+### Objetivo del avance
+
+Completar las operaciones de escritura de la API y ofrecer una interfaz gráfica
+para administrar la información sin depender de `curl`, manteniendo el enfoque
+DevOps y la calidad del avance anterior.
+
+### Actividades realizadas
+
+- [x] **CRUD completo en los cuatro recursos**: `PUT/PATCH` y `DELETE` para
+  carreras, cursos, estudiantes e inscripciones.
+- [x] **Actualizaciones parciales** con validación de campos, duplicados y
+  referencias inexistentes (`400`, `404`, `409`).
+- [x] **Borrado seguro**: se bloquea la eliminación de carreras con estudiantes,
+  estudiantes con inscripciones y cursos con inscripciones. Las inscripciones se
+  eliminan primero, dejando la integridad en manos de la aplicación.
+- [x] **Interfaz gráfica** servida por Flask con Jinja2, CSS y JavaScript:
+  panel con pestañas, contadores, tablas, formularios modales, edición, borrado,
+  confirmaciones, notificaciones y estado de salud.
+- [x] **Sin dependencias de frontend**: no hay CDN, bundler ni build step; la UI
+  consume la API REST con `fetch`.
+- [x] **Pruebas ampliadas a 11 casos**: CRUD, validaciones, relaciones
+  protegidas, recursos inexistentes y carga del panel web.
+- [x] **Documentación actualizada**: README con interfaz, endpoints completos y
+  estructura; esta bitácora con evidencias.
+- [x] **Validación end-to-end** contra MySQL en Docker Compose.
+
+### Decisiones técnicas
+
+| Decisión | Justificación |
+| -------- | ------------- |
+| UI en el mismo servicio Flask | Mantiene el avance simple y demuestra el consumo de la propia API sin añadir otro contenedor. |
+| Jinja2 + JavaScript vanilla | Sin build step ni dependencias externas; fácil de reproducir y exponer. |
+| `PUT` y `PATCH` con la misma semántica parcial | Simplifica la API y la UI; ambos actualizan solo los campos enviados. |
+| Borrado bloqueado ante dependencias | Evita eliminaciones en cascada accidentales y hace explícito el orden de limpieza. |
+| Edición de inscripciones limitada a periodo y nota | Cambiar estudiante/curso equivale a otra inscripción; evita estados inconsistentes. |
+| Borrado de inscripciones como operación explícita | Permite liberar estudiantes y cursos antes de eliminarlos. |
+
+### Evidencias para la demostración
+
+```bash
+# 1. Levantar el entorno
+make up
+
+# 2. Panel web
+# http://localhost:5000/  -> crear, editar y eliminar registros
+
+# 3. API completa
+curl -X PATCH http://localhost:5000/estudiantes/1 \
+  -H 'Content-Type: application/json' \
+  -d '{"nombre": "Ana María"}'
+
+curl -X PATCH http://localhost:5000/inscripciones/1 \
+  -H 'Content-Type: application/json' \
+  -d '{"nota": 19.5}'
+
+# Borrado protegido (HTTP 409) y borrado permitido (HTTP 204)
+curl -i -X DELETE http://localhost:5000/carreras/1
+
+# 4. Pruebas
+make test
+# 11 passed
+
+# 5. Estado
+curl http://localhost:5000/health
+```
+
+### Pendientes para el siguiente avance
+
+- Migraciones de esquema con Flask-Migrate/Alembic.
+- Publicación de la imagen en un registry y despliegue documentado.
+- Observabilidad: logs estructurados y métricas.
+- Autenticación y roles para el panel.
+

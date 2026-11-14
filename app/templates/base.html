@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Panel de gestión académica del proyecto DevOps">
+  <title>{% block title %}Panel DevOps · Gestión Académica{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true">DV</span>
+        <div class="brand-text">
+          <strong>Gestión Académica</strong>
+          <span>Proyecto DevOps · Avance 2</span>
+        </div>
+      </div>
+      <div class="topbar-actions">
+        <span id="health-badge" class="badge badge-muted">
+          <span class="dot"></span> Verificando...
+        </span>
+        <button id="refresh-btn" class="btn btn-ghost" type="button" title="Recargar datos">
+          ↻ Actualizar
+        </button>
+      </div>
+    </header>
+
+    <main class="container">
+      {% block content %}{% endblock %}
+    </main>
+
+    <footer class="footer">
+      <span>Flask · MySQL · Docker Compose</span>
+      <a href="/health" target="_blank" rel="noopener">Ver /health</a>
+    </footer>
+  </div>
+
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+  <script src="{{ url_for('static', filename='js/app.js') }}" defer></script>
+</body>
+</html>

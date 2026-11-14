@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="hero">
+  <div class="hero-copy">
+    <p class="eyebrow">Panel de control</p>
+    <h1>Gestión de estudiantes, carreras y cursos</h1>
+    <p class="muted">
+      Administra la información académica almacenada en MySQL. Los cambios se
+      guardan directamente a través de la API REST.
+    </p>
+  </div>
+  <div class="hero-stat" aria-live="polite">
+    <span class="hero-stat-value" id="total-registros">0</span>
+    <span class="hero-stat-label">registros totales</span>
+  </div>
+</section>
+
+<nav class="tabs" role="tablist" aria-label="Recursos de la aplicación">
+  <button class="tab is-active" role="tab" aria-selected="true" data-entity="estudiantes">
+    Estudiantes <span class="count" data-count="estudiantes">0</span>
+  </button>
+  <button class="tab" role="tab" aria-selected="false" data-entity="carreras">
+    Carreras <span class="count" data-count="carreras">0</span>
+  </button>
+  <button class="tab" role="tab" aria-selected="false" data-entity="cursos">
+    Cursos <span class="count" data-count="cursos">0</span>
+  </button>
+  <button class="tab" role="tab" aria-selected="false" data-entity="inscripciones">
+    Inscripciones <span class="count" data-count="inscripciones">0</span>
+  </button>
+</nav>
+
+<section class="panel" aria-live="polite">
+  <div class="panel-head">
+    <div>
+      <h2 id="panel-title">Estudiantes</h2>
+      <p class="muted" id="panel-subtitle">
+        Registra y actualiza los datos de los estudiantes.
+      </p>
+    </div>
+    <button class="btn btn-primary" id="create-btn" type="button">
+      + Nuevo estudiante
+    </button>
+  </div>
+
+  <div class="table-wrap">
+    <table class="data-table">
+      <thead id="table-head"></thead>
+      <tbody id="table-body"></tbody>
+    </table>
+
+    <div id="empty-state" class="empty-state" hidden>
+      <p>No hay registros todavía.</p>
+      <button class="btn btn-primary" id="empty-create-btn" type="button">
+        Crear el primero
+      </button>
+    </div>
+  </div>
+</section>
+
+<dialog id="entity-dialog" class="modal">
+  <form id="entity-form">
+    <header class="modal-head">
+      <h2 id="modal-title">Nuevo registro</h2>
+      <button type="button" class="icon-btn" id="close-modal" aria-label="Cerrar">×</button>
+    </header>
+
+    <div id="form-fields" class="form-grid"></div>
+
+    <footer class="modal-actions">
+      <button type="button" class="btn btn-ghost" id="cancel-btn">Cancelar</button>
+      <button type="submit" class="btn btn-primary" id="save-btn">Guardar</button>
+    </footer>
+  </form>
+</dialog>
+{% endblock %}

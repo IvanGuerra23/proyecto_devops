@@ -27,7 +27,7 @@ adminer: ## Levanta Adminer en http://localhost:8081
 	docker compose --profile tools up -d adminer
 
 test: ## Ejecuta las pruebas en un contenedor Python 3.12
-	docker run --rm -v "$$(pwd)":/app -w /app python:3.12-slim sh -c "pip install -q -r requirements-dev.txt && pytest -q"
+	docker run --rm -e PYTHONDONTWRITEBYTECODE=1 -v "$$(pwd)":/app -w /app python:3.12-slim sh -c "pip install -q -r requirements-dev.txt && python -m pytest -q -p no:cacheprovider"
 
 shell: ## Abre una shell dentro del contenedor de la app
 	docker compose exec app sh

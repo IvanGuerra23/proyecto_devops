@@ -1,20 +1,19 @@
-# CRUD Docker — API de Estudiantes
+# CRUD Docker — Gestión Académica (Flask + MySQL)
 
 Proyecto académico de **DevOps** que evoluciona el CRUD original de Flask hacia una
 aplicación contenerizada, con base de datos relacional, healthchecks, datos de
 ejemplo, pruebas automatizadas y CI.
 
-> **Estado: Avance 1.** El foco de este avance es la configuración del proyecto,
-> la infraestructura DevOps y el modelo de datos (4 tablas). La API cubre
-> consulta y creación de los recursos; actualización y borrado quedan para el
-> siguiente avance.
+> **Estado: Avance 2.** Se completó el CRUD de los cuatro recursos y se añadió
+> una interfaz gráfica servida por Flask. La infraestructura DevOps del Avance 1
+> (Docker, Compose, healthchecks, pruebas y CI) se mantiene y se amplía.
 
 ## Arquitectura
 
 ```text
 ┌──────────────────┐        HTTP :5000        ┌──────────────────┐
-│ Cliente (curl)   │ ───────────────────────► │ app (Flask)      │
-│                  │                          │ Gunicorn + 2 w.  │
+│ Navegador / curl │ ───────────────────────► │ app (Flask)      │
+│ UI + API REST    │                          │ Gunicorn + 2 w.  │
 └──────────────────┘                          └────────┬─────────┘
                                                        │ SQL :3306
                                                        ▼
@@ -29,6 +28,8 @@ ejemplo, pruebas automatizadas y CI.
 - El entrypoint espera la conexión, crea el esquema y carga datos de ejemplo (idempotente).
 - La aplicación corre con **usuario no root** y **Gunicorn**, no con el servidor de desarrollo.
 - Adminer (opcional) permite inspeccionar la base desde el navegador.
+- La misma aplicación sirve el panel web y la API REST; el frontend consume la API con `fetch`.
+- El `Makefile` es un atajo opcional; todos los comandos funcionan con `docker compose`.
 
 ## Modelo de datos
 
@@ -53,25 +54,27 @@ con restricción única por `(estudiante_id, curso_id, periodo)` y `nota` entre 
 
 ## Puesta en marcha
 
-Requisitos: Docker Engine y Docker Compose v2.
+Requisitos: Docker Engine y Docker Compose v2. El `Makefile` es opcional: si no
+tienes `make`, ejecuta los mismos comandos con `docker compose`.
 
 ```bash
 # 1. (Opcional) personalizar credenciales y puertos
 cp .env.example .env
 
 # 2. Construir y levantar app + MySQL
-make up
+docker compose up -d --build
 
 # 3. Verificar
 curl http://localhost:5000/health
-curl http://localhost:5000/estudiantes
+curl http://localhost:5000/
 ```
 
 Servicios:
 
 | Servicio  | URL                          | Notas                                  |
 | --------- | ---------------------------- | -------------------------------------- |
-| API       | http://localhost:5000        | `APP_PORT` configurable                |
+| Panel web | http://localhost:5000        | Interfaz gráfica de la aplicación      |
+| API       | http://localhost:5000/<recurso> | JSON (`/estudiantes`, `/carreras`, ...) |
 | MySQL     | `localhost:3307`             | `MYSQL_PORT`; usuario `devops`         |
 | Adminer   | http://localhost:8081        | `make adminer` (perfil `tools`)        |
 
@@ -85,24 +88,43 @@ Detener sin perder datos: `make down`. Borrar también la base: `make clean` (de
 Al iniciar con `SEED_DATA=true` se cargan 3 carreras, 4 cursos, 4 estudiantes y
 5 inscripciones. La carga solo ocurre si la tabla `carreras` está vacía.
 
+## Interfaz gráfica
+
+El panel está disponible en **http://localhost:5000/** y permite:
+
+- Consultar, crear, editar y eliminar carreras, cursos, estudiantes e inscripciones.
+- Ver los totales por recurso y el estado de la conexión con la base de datos.
+- Usar formularios con validación y mensajes de error devueltos por la API.
+- Diseño responsive, sin dependencias externas ni build step.
+
+La interfaz vive en `app/templates/` y `app/static/`, y consume la misma API REST.
+
 ## Endpoints
 
-| Método | Ruta                     | Descripción                                      |
-| ------ | ------------------------ | ------------------------------------------------ |
-| GET    | `/`                      | Información básica de la API                     |
-| GET    | `/health`                | Estado de la app y de la conexión a la BD        |
-| GET    | `/carreras`              | Lista de carreras                                |
-| GET    | `/carreras/<id>`         | Detalle de una carrera                           |
-| POST   | `/carreras`              | Crea una carrera (`nombre`, `facultad`)           |
-| GET    | `/estudiantes`           | Lista estudiantes (`?carrera_id=` opcional)      |
-| GET    | `/estudiantes/<id>`      | Detalle de un estudiante                         |
-| POST   | `/estudiantes`           | Crea un estudiante                               |
-| GET    | `/cursos`                | Lista de cursos                                  |
-| GET    | `/cursos/<id>`           | Detalle de un curso                              |
-| POST   | `/cursos`                | Crea un curso                                    |
-| GET    | `/inscripciones`         | Lista inscripciones (`?estudiante_id=`, `?periodo=`) |
-| GET    | `/inscripciones/<id>`    | Detalle de una inscripción                       |
-| POST   | `/inscripciones`         | Inscribe a un estudiante en un curso             |
+| Método    | Ruta                     | Descripción                                           |
+| --------- | ------------------------ | ----------------------------------------------------- |
+| GET       | `/`                      | Panel web (HTML)                                      |
+| GET       | `/health`                | Estado de la app y de la conexión a la BD             |
+| GET       | `/carreras`              | Lista de carreras                                     |
+| GET       | `/carreras/<id>`         | Detalle de una carrera                                |
+| POST      | `/carreras`              | Crea una carrera (`nombre`, `facultad`)                |
+| PUT/PATCH | `/carreras/<id>`         | Actualiza nombre y/o facultad                         |
+| DELETE    | `/carreras/<id>`         | Elimina una carrera sin estudiantes                   |
+| GET       | `/estudiantes`           | Lista estudiantes (`?carrera_id=` opcional)           |
+| GET       | `/estudiantes/<id>`      | Detalle de un estudiante                              |
+| POST      | `/estudiantes`           | Crea un estudiante                                    |
+| PUT/PATCH | `/estudiantes/<id>`      | Actualiza los campos enviados                         |
+| DELETE    | `/estudiantes/<id>`      | Elimina un estudiante sin inscripciones               |
+| GET       | `/cursos`                | Lista de cursos                                       |
+| GET       | `/cursos/<id>`           | Detalle de un curso                                   |
+| POST      | `/cursos`                | Crea un curso                                         |
+| PUT/PATCH | `/cursos/<id>`           | Actualiza los campos enviados                         |
+| DELETE    | `/cursos/<id>`           | Elimina un curso sin inscripciones                    |
+| GET       | `/inscripciones`         | Lista inscripciones (`?estudiante_id=`, `?periodo=`)  |
+| GET       | `/inscripciones/<id>`    | Detalle de una inscripción                            |
+| POST      | `/inscripciones`         | Inscribe a un estudiante en un curso                  |
+| PUT/PATCH | `/inscripciones/<id>`    | Actualiza periodo y/o nota                            |
+| DELETE    | `/inscripciones/<id>`    | Elimina una inscripción                               |
 
 Ejemplos:
 
@@ -152,7 +174,9 @@ crud-docker/
 │   ├── seed.py              # Datos de ejemplo idempotentes
 │   ├── utils.py             # Helpers de validación/errores
 │   ├── wait_for_db.py       # Espera activa de la BD
-│   └── routes/              # Blueprints: health, carreras, cursos, estudiantes, inscripciones
+│   ├── routes/              # Blueprints: ui, health, carreras, cursos, estudiantes, inscripciones
+│   ├── static/              # CSS y JavaScript de la interfaz
+│   └── templates/           # Plantillas Jinja2 (panel web)
 ├── scripts/entrypoint.sh    # Entrypoint del contenedor
 ├── tests/                   # Pruebas con pytest
 ├── docs/avances.md          # Bitácora del proyecto
@@ -170,6 +194,10 @@ crud-docker/
 
 ```bash
 # Pruebas en contenedor (no requiere Python local)
+docker run --rm -e PYTHONDONTWRITEBYTECODE=1 -v "$PWD":/app -w /app \
+  python:3.12-slim sh -c "pip install -q -r requirements-dev.txt && python -m pytest -q -p no:cacheprovider"
+
+# O con make, si está instalado
 make test
 
 # Ejecución local con SQLite
@@ -194,7 +222,7 @@ La bitácora detallada (decisiones, evidencias y pendientes) está en
 
 ## Próximos pasos
 
-- Completar CRUD (`PUT`/`PATCH` y `DELETE`) con pruebas.
 - Migraciones de esquema con Flask-Migrate/Alembic.
 - Publicación de imagen en un registry y despliegue.
 - Observabilidad: logs estructurados y métricas.
+- Autenticación y roles para el panel.

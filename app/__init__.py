@@ -30,12 +30,4 @@ def create_app(config_object=None) -> Flask:
         init_database(app)
         click.echo("Esquema y datos de ejemplo listos.")
 
-    @app.get("/")
-    def index():
-        return {
-            "mensaje": "API CRUD DevOps - Avance 1",
-            "health": "/health",
-            "recursos": ["/carreras", "/estudiantes", "/cursos", "/inscripciones"],
-        }
-
     return app
