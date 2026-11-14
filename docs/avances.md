@@ -162,3 +162,111 @@ curl http://localhost:5000/health
 - Observabilidad: logs estructurados y métricas.
 - Autenticación y roles para el panel.
 
+---
+
+## 2026-11-13 — Avance 3: migraciones, observabilidad y CI/CD de imagen
+
+### Objetivo del avance
+
+Dar madurez operativa al proyecto: versionar el esquema de la base de datos,
+exponer señales de observabilidad y automatizar la publicación y el análisis de
+la imagen, sin perder la compatibilidad con los datos de avances anteriores.
+
+### Actividades realizadas
+
+- [x] **Migraciones con Flask-Migrate/Alembic** (`migrations/`), con una
+  migración inicial que reproduce las 4 tablas, índices, claves foráneas y
+  restricciones únicas.
+- [x] **Runner de migraciones** (`app/db_migrations.py`) que detecta bases
+  heredadas sin `alembic_version`, aplica `stamp` en la revisión actual y luego
+  ejecuta `upgrade`. Los datos existentes se conservan.
+- [x] **Bootstrap de arranque** (`app/bootstrap.py`): espera la BD, aplica
+  migraciones y carga el seed antes de iniciar Gunicorn.
+- [x] **Logs estructurados JSON** con nivel configurable (`LOG_LEVEL`), duración,
+  estado, ruta y `request_id`.
+- [x] **Request IDs**: se acepta `X-Request-ID` del cliente o se genera uno; se
+  devuelve siempre en la respuesta y se incluye en el log.
+- [x] **Métricas Prometheus** en `/metrics`: `http_requests_total` y
+  `http_request_duration_seconds` con etiquetas de método, endpoint y estado.
+- [x] **Modo multiproceso** de `prometheus-client` para agregar métricas de los
+  2 workers de Gunicorn (`PROMETHEUS_MULTIPROC_DIR`).
+- [x] **Prometheus opcional** en Compose (perfil `observability`, puerto 9090)
+  con `observability/prometheus.yml` apuntando a `app:5000/metrics`.
+- [x] **CI/CD**: build de imagen, escaneo con Trivy y publicación en GHCR
+  (`latest` y `sha-<commit>`) con `GITHUB_TOKEN` y `packages: write`.
+- [x] **Imagen configurable** vía `APP_IMAGE`, para consumir la publicada en
+  GHCR desde Compose.
+- [x] **Pruebas ampliadas a 13 casos**, incluyendo `/metrics` y `X-Request-ID`.
+- [x] **Validación end-to-end** de la migración sobre el volumen heredado y
+  sobre una base vacía.
+
+### Decisiones técnicas
+
+| Decisión | Justificación |
+| -------- | ------------- |
+| Alembic como fuente del esquema | Permite evolucionar la base de forma reproducible y auditable. |
+| `stamp` automático si faltan `alembic_version` | Evita recrear tablas en el volumen de avances previos conservando los datos. |
+| Bootstrap antes de Gunicorn | Garantiza que la app nunca arranque con un esquema desactualizado. |
+| Logs JSON con `X-Request-ID` | Facilita correlacionar peticiones y depurar en entornos contenerizados. |
+| `prometheus-client` en modo multiproceso | Gunicorn usa 2 workers; sin esto las métricas se perderían entre procesos. |
+| Prometheus en perfil opcional | Mantiene el arranque por defecto liviano y permite demostrar observabilidad cuando se necesita. |
+| Trivy no bloqueante (`exit-code: 0`) | El objetivo del avance es informar vulnerabilidades sin frenar la entrega. |
+| Tags `latest` + `sha-<commit>` en GHCR | `latest` para demo y el SHA para trazabilidad reproducible. |
+| Renombrar `app/migrate.py` a `app/db_migrations.py` | Evita que el submódulo sobrescriba la extensión `migrate` del paquete `app`. |
+
+### Evidencias para la demostración
+
+```bash
+# 1. Levantar el entorno (aplica migraciones automáticamente)
+docker compose up -d --build
+
+# 2. Verificar el estado y la versión del esquema
+curl http://localhost:5000/health
+docker compose exec -T db sh -c \
+  'mysql -u$MYSQL_USER -p$MYSQL_PASSWORD $MYSQL_DATABASE -N \
+   -e "SELECT version_num FROM alembic_version;"'
+# d948fc81d8ad
+
+# 3. Logs JSON y request ID
+docker compose logs -f app
+curl -H 'X-Request-ID: demo-abc-123' http://localhost:5000/health
+# {"message": "http_request", ..., "request_id": "demo-abc-123"}
+
+# 4. Métricas y Prometheus
+curl http://localhost:5000/metrics | grep http_requests_total
+docker compose --profile observability up -d prometheus
+curl 'http://localhost:9090/api/v1/query?query=http_requests_total'
+
+# 5. Pruebas
+docker run --rm -e PYTHONDONTWRITEBYTECODE=1 -v "$PWD":/app -w /app \
+  python:3.12-slim sh -c \
+  "pip install -q -r requirements-dev.txt && python -m pytest -q -p no:cacheprovider"
+# 13 passed
+
+# 6. Migración en base vacía (camino alterno)
+#    Se crea una base temporal y se ejecuta:
+docker run --rm --network crud-docker_backend \
+  -e DATABASE_URL='mysql+pymysql://devops:devops123@db:3306/devops_fresh?charset=utf8mb4' \
+  --entrypoint python crud-docker-app:latest -m app.bootstrap
+```
+
+Resultados obtenidos en la validación:
+
+| Verificación | Resultado |
+| ------------ | --------- |
+| Volumen heredado (sin `alembic_version`) | `stamp_revision -> d948fc81d8ad`, datos intactos (3 carreras, 4 cursos, 4 estudiantes, 5 inscripciones) |
+| Base vacía | `upgrade -> d948fc81d8ad`, 4 tablas + `alembic_version`, seed cargado |
+| `/metrics` | Métricas `http_requests_total` y `http_request_duration_seconds` presentes |
+| Prometheus | Target `crud-docker-app` en estado `up` y consulta con 6 series |
+| Logs | Línea JSON con `request_id: demo-abc-123` |
+| Pruebas | **13 passed** |
+| CI | Workflow con tests, build, Trivy y push a GHCR |
+
+### Pendientes para el siguiente avance
+
+- Autenticación y roles para el panel y la API.
+- Despliegue documentado usando la imagen de GHCR.
+- Alertas en Prometheus y dashboards en Grafana.
+- Endurecimiento de la imagen y políticas de seguridad.
+
+

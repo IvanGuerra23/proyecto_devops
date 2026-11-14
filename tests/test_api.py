@@ -61,6 +61,26 @@ def test_interfaz_grafica(client):
     assert b"app.js" in respuesta.data
 
 
+def test_metrics_expone_prometheus(client):
+    client.get("/health")
+
+    respuesta = client.get("/metrics")
+
+    assert respuesta.status_code == 200
+    assert respuesta.content_type.startswith("text/plain")
+    cuerpo = respuesta.data.decode()
+    assert "http_requests_total" in cuerpo
+    assert "http_request_duration_seconds" in cuerpo
+
+
+def test_request_id_propio_y_generado(client):
+    propio = client.get("/health", headers={"X-Request-ID": "demo-123"})
+    assert propio.headers["X-Request-ID"] == "demo-123"
+
+    generado = client.get("/health")
+    assert len(generado.headers["X-Request-ID"]) == 12
+
+
 def test_crear_y_listar_estudiante(client):
     carrera_id = crear_carrera(client)
     estudiante = crear_estudiante(client, carrera_id)

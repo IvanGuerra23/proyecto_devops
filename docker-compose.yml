@@ -30,12 +30,14 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: crud-docker-app:latest
+    image: ${APP_IMAGE:-crud-docker-app:latest}
     restart: unless-stopped
     environment:
       SECRET_KEY: ${SECRET_KEY:-dev-secret-cambiar-en-produccion}
       DATABASE_URL: "mysql+pymysql://${MYSQL_USER:-devops}:${MYSQL_PASSWORD:-devops123}@db:3306/${MYSQL_DATABASE:-devops_db}?charset=utf8mb4"
       SEED_DATA: ${SEED_DATA:-true}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      PROMETHEUS_MULTIPROC_DIR: /tmp/prometheus
     ports:
       - "${APP_PORT:-5000}:5000"
     depends_on:
@@ -68,8 +70,27 @@ services:
     networks:
       - backend
 
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    restart: unless-stopped
+    profiles: ["observability"]
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.retention.time=7d"
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+    volumes:
+      - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    depends_on:
+      app:
+        condition: service_healthy
+    networks:
+      - backend
+
 volumes:
   mysql_data:
+  prometheus_data:
 
 networks:
   backend:

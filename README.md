@@ -4,9 +4,11 @@ Proyecto académico de **DevOps** que evoluciona el CRUD original de Flask hacia
 aplicación contenerizada, con base de datos relacional, healthchecks, datos de
 ejemplo, pruebas automatizadas y CI.
 
-> **Estado: Avance 2.** Se completó el CRUD de los cuatro recursos y se añadió
-> una interfaz gráfica servida por Flask. La infraestructura DevOps del Avance 1
-> (Docker, Compose, healthchecks, pruebas y CI) se mantiene y se amplía.
+> **Estado: Avance 3.** Se incorporaron migraciones de base de datos con
+> Flask-Migrate/Alembic, observabilidad (logs JSON, request IDs y métricas
+> Prometheus) y publicación automatizada de la imagen en GHCR con escaneo Trivy.
+> El CRUD, la interfaz y la infraestructura de los avances anteriores se
+> mantienen.
 
 ## Arquitectura
 
@@ -22,13 +24,17 @@ ejemplo, pruebas automatizadas y CI.
                                               │ volumen: mysql_  │
                                               │ data             │
                                               └──────────────────┘
+
+  Prometheus (:9090, perfil opcional) ──scrape──► app:5000/metrics
 ```
 
 - `app` espera a que `db` esté **saludable** (`depends_on: service_healthy`).
-- El entrypoint espera la conexión, crea el esquema y carga datos de ejemplo (idempotente).
+- El entrypoint espera la conexión, **aplica las migraciones** y carga datos de
+  ejemplo (idempotente) antes de arrancar Gunicorn.
 - La aplicación corre con **usuario no root** y **Gunicorn**, no con el servidor de desarrollo.
 - Adminer (opcional) permite inspeccionar la base desde el navegador.
 - La misma aplicación sirve el panel web y la API REST; el frontend consume la API con `fetch`.
+- Prometheus (opcional, perfil `observability`) recolecta las métricas de `/metrics`.
 - El `Makefile` es un atajo opcional; todos los comandos funcionan con `docker compose`.
 
 ## Modelo de datos
@@ -75,8 +81,10 @@ Servicios:
 | --------- | ---------------------------- | -------------------------------------- |
 | Panel web | http://localhost:5000        | Interfaz gráfica de la aplicación      |
 | API       | http://localhost:5000/<recurso> | JSON (`/estudiantes`, `/carreras`, ...) |
+| Métricas  | http://localhost:5000/metrics | Formato Prometheus                     |
 | MySQL     | `localhost:3307`             | `MYSQL_PORT`; usuario `devops`         |
 | Adminer   | http://localhost:8081        | `make adminer` (perfil `tools`)        |
+| Prometheus| http://localhost:9090        | `make observability` (perfil `observability`) |
 
 En Adminer usa: servidor `db`, usuario `devops`, contraseña `devops123` y base
 `devops_db`.
@@ -87,6 +95,73 @@ Detener sin perder datos: `make down`. Borrar también la base: `make clean` (de
 
 Al iniciar con `SEED_DATA=true` se cargan 3 carreras, 4 cursos, 4 estudiantes y
 5 inscripciones. La carga solo ocurre si la tabla `carreras` está vacía.
+
+## Migraciones de base de datos
+
+El esquema se versiona con **Flask-Migrate/Alembic** en `migrations/`.
+
+```bash
+# Aplicar migraciones pendientes (y datos de ejemplo)
+docker compose run --rm --entrypoint python app -m app.bootstrap
+
+# O con make
+make migrate
+```
+
+El contenedor ejecuta ese mismo bootstrap en cada arranque, por lo que un
+`docker compose up` deja la base al día sin pasos manuales.
+
+- Las bases nuevas se crean aplicando la migración inicial.
+- Las bases creadas en avances anteriores (sin tabla `alembic_version`) se
+  **marcan con `stamp`** en la revisión actual antes de continuar. Así se evita
+  recrear tablas existentes y se conservan los datos.
+- Para crear una migración nueva tras cambiar los modelos:
+
+  ```bash
+  docker compose run --rm --entrypoint flask app --app app db migrate -m "descripcion"
+  docker compose run --rm --entrypoint flask app --app app db upgrade
+  ```
+
+## Observabilidad
+
+- **Logs JSON** en stdout: cada petición genera una línea con `method`, `path`,
+  `status`, `duration_ms`, `request_id` y `remote_addr`.
+- **Request ID**: se respeta `X-Request-ID` si el cliente lo envía y, si no, se
+  genera uno; siempre se devuelve en la respuesta.
+- **Métricas Prometheus** en `/metrics`: `http_requests_total` y
+  `http_request_duration_seconds` por método, endpoint y estado.
+- **Soporte multiproceso**: como Gunicorn usa 2 workers, las métricas se agregan
+  mediante `PROMETHEUS_MULTIPROC_DIR=/tmp/prometheus`.
+
+```bash
+# Métricas en texto Prometheus
+curl http://localhost:5000/metrics
+
+# Prometheus + consulta de ejemplo
+make observability
+curl 'http://localhost:9090/api/v1/query?query=http_requests_total'
+```
+
+## CI/CD y publicación de imagen
+
+`.github/workflows/ci.yml` se ejecuta en cada push a `main` y en pull requests:
+
+1. Instala dependencias y ejecuta `pytest`.
+2. Construye la imagen Docker.
+3. Escanea la imagen con **Trivy** (vulnerabilidades `CRITICAL`/`HIGH`; el
+   escaneo es informativo y no bloquea el pipeline).
+4. En push a `main`, publica en **GHCR** las etiquetas `latest` y
+   `sha-<commit>` usando `GITHUB_TOKEN`.
+
+```bash
+# Usar la imagen publicada
+echo "APP_IMAGE=ghcr.io/ivanguerra23/proyecto_devops:latest" >> .env
+docker compose pull app
+docker compose up -d
+```
+
+La imagen es privada por defecto en GHCR; para descargarla desde otra máquina
+hay que autenticarse con un token con permiso `read:packages`.
 
 ## Interfaz gráfica
 
@@ -105,6 +180,7 @@ La interfaz vive en `app/templates/` y `app/static/`, y consume la misma API RES
 | --------- | ------------------------ | ----------------------------------------------------- |
 | GET       | `/`                      | Panel web (HTML)                                      |
 | GET       | `/health`                | Estado de la app y de la conexión a la BD             |
+| GET       | `/metrics`               | Métricas en formato Prometheus                        |
 | GET       | `/carreras`              | Lista de carreras                                     |
 | GET       | `/carreras/<id>`         | Detalle de una carrera                                |
 | POST      | `/carreras`              | Crea una carrera (`nombre`, `facultad`)                |
@@ -152,6 +228,9 @@ Errores uniformes: `400` validación, `404` recurso no encontrado, `409` duplica
 | `DATABASE_URL`        | SQLite en `instance/`         | Cadena de conexión (acepta `mysql://`)|
 | `SECRET_KEY`          | valor de desarrollo           | Clave de Flask                        |
 | `SEED_DATA`           | `true`                        | Cargar datos de ejemplo               |
+| `LOG_LEVEL`           | `INFO`                        | Nivel de los logs estructurados       |
+| `APP_IMAGE`           | `crud-docker-app:latest`      | Imagen usada por el servicio `app`    |
+| `PROMETHEUS_PORT`     | `9090`                        | Puerto de Prometheus en el host       |
 | `MYSQL_DATABASE`      | `devops_db`                   | Base creada por MySQL                 |
 | `MYSQL_USER`          | `devops`                      | Usuario de la aplicación              |
 | `MYSQL_PASSWORD`      | `devops123`                   | Contraseña de la aplicación           |
@@ -168,19 +247,24 @@ Errores uniformes: `400` validación, `404` recurso no encontrado, `409` duplica
 crud-docker/
 ├── app/
 │   ├── __init__.py          # Fábrica de la aplicación
-│   ├── db_init.py           # Creación de esquema + seed
-│   ├── extensions.py        # SQLAlchemy
+│   ├── bootstrap.py         # Migraciones + datos de ejemplo al arrancar
+│   ├── db_migrations.py     # Runner de Alembic con stamp para bases heredadas
+│   ├── extensions.py        # SQLAlchemy + Flask-Migrate
 │   ├── models.py            # 4 modelos relacionales
+│   ├── observability.py     # Logs JSON, request IDs y métricas Prometheus
 │   ├── seed.py              # Datos de ejemplo idempotentes
 │   ├── utils.py             # Helpers de validación/errores
 │   ├── wait_for_db.py       # Espera activa de la BD
 │   ├── routes/              # Blueprints: ui, health, carreras, cursos, estudiantes, inscripciones
 │   ├── static/              # CSS y JavaScript de la interfaz
 │   └── templates/           # Plantillas Jinja2 (panel web)
+├── migrations/              # Historial de migraciones Alembic
+├── observability/
+│   └── prometheus.yml       # Scrape de app:5000/metrics
 ├── scripts/entrypoint.sh    # Entrypoint del contenedor
 ├── tests/                   # Pruebas con pytest
 ├── docs/avances.md          # Bitácora del proyecto
-├── .github/workflows/ci.yml # CI: pruebas + build de imagen
+├── .github/workflows/ci.yml # CI: pruebas, build, Trivy y publicación en GHCR
 ├── config.py                # Configuración por entorno
 ├── app.py                   # Entrada para desarrollo local
 ├── wsgi.py                  # Entrada para Gunicorn
@@ -214,6 +298,8 @@ La configuración de pruebas usa SQLite en memoria y no carga datos de ejemplo.
 
 1. Instala dependencias y ejecuta `pytest`.
 2. Construye la imagen Docker.
+3. Escanea la imagen con Trivy.
+4. En push a `main`, publica en GHCR con las etiquetas `latest` y `sha-<commit>`.
 
 ## Documentación del avance
 
@@ -222,7 +308,7 @@ La bitácora detallada (decisiones, evidencias y pendientes) está en
 
 ## Próximos pasos
 
-- Migraciones de esquema con Flask-Migrate/Alembic.
-- Publicación de imagen en un registry y despliegue.
-- Observabilidad: logs estructurados y métricas.
-- Autenticación y roles para el panel.
+- Autenticación y roles para el panel y la API.
+- Despliegue en un entorno con la imagen de GHCR.
+- Alertas en Prometheus y dashboards en Grafana.
+- Endurecimiento adicional de la imagen y políticas de seguridad.

@@ -1,6 +1,6 @@
 .DEFAULT_GOAL := help
 
-.PHONY: help up down restart logs ps health adminer test shell db-shell clean
+.PHONY: help up down restart logs ps health adminer observability migrate test shell db-shell clean
 
 help: ## Muestra esta ayuda
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
@@ -25,6 +25,12 @@ health: ## Consulta el endpoint de salud
 
 adminer: ## Levanta Adminer en http://localhost:8081
 	docker compose --profile tools up -d adminer
+
+observability: ## Levanta Prometheus en http://localhost:9090
+	docker compose --profile observability up -d prometheus
+
+migrate: ## Aplica migraciones pendientes y carga datos de ejemplo
+	docker compose run --rm --entrypoint python app -m app.bootstrap
 
 test: ## Ejecuta las pruebas en un contenedor Python 3.12
 	docker run --rm -e PYTHONDONTWRITEBYTECODE=1 -v "$$(pwd)":/app -w /app python:3.12-slim sh -c "pip install -q -r requirements-dev.txt && python -m pytest -q -p no:cacheprovider"

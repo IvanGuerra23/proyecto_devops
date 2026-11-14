@@ -30,6 +30,7 @@ class Config:
     }
     # Carga datos de ejemplo solo cuando las tablas están vacías.
     SEED_DATA = os.getenv("SEED_DATA", "true").lower() in {"1", "true", "yes"}
+    LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
 
 
 class TestingConfig(Config):
