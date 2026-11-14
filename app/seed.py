@@ -1,9 +1,10 @@
 """Datos de ejemplo para la demostración del avance."""
 
+from flask import current_app
 from sqlalchemy import select
 
 from .extensions import db
-from .models import Carrera, Curso, Estudiante, Inscripcion
+from .models import Carrera, Curso, Estudiante, Inscripcion, Usuario
 
 
 def load_seed_data() -> None:
@@ -117,3 +118,44 @@ def load_seed_data() -> None:
         ]
     )
     db.session.commit()
+
+
+def ensure_default_users() -> None:
+    """Crea las cuentas demo solo si su email no existe (idempotente)."""
+    if not current_app.config.get("SEED_USERS", True):
+        return
+
+    cuentas = (
+        (
+            current_app.config["SEED_ADMIN_EMAIL"],
+            current_app.config["SEED_ADMIN_PASSWORD"],
+            "Administrador",
+            "admin",
+        ),
+        (
+            current_app.config["SEED_VIEWER_EMAIL"],
+            current_app.config["SEED_VIEWER_PASSWORD"],
+            "Consulta",
+            "lector",
+        ),
+    )
+
+    creados = 0
+    for email, password, nombre, rol in cuentas:
+        email = str(email or "").strip().lower()
+        if not email or not password:
+            continue
+        existente = db.session.scalar(
+            select(Usuario).where(Usuario.email == email)
+        )
+        if existente is not None:
+            continue
+
+        usuario = Usuario(nombre=nombre, email=email, rol=rol)
+        usuario.set_password(password)
+        db.session.add(usuario)
+        creados += 1
+
+    if creados:
+        db.session.commit()
+

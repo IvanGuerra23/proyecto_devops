@@ -39,7 +39,7 @@
         Registra y actualiza los datos de los estudiantes.
       </p>
     </div>
-    <button class="btn btn-primary" id="create-btn" type="button">
+    <button class="btn btn-primary" id="create-btn" type="button" {% if not puede_escribir %}hidden{% endif %}>
       + Nuevo estudiante
     </button>
   </div>
@@ -52,7 +52,7 @@
 
     <div id="empty-state" class="empty-state" hidden>
       <p>No hay registros todavía.</p>
-      <button class="btn btn-primary" id="empty-create-btn" type="button">
+      <button class="btn btn-primary" id="empty-create-btn" type="button" {% if not puede_escribir %}hidden{% endif %}>
         Crear el primero
       </button>
     </div>

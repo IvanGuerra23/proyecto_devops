@@ -269,4 +269,122 @@ Resultados obtenidos en la validación:
 - Alertas en Prometheus y dashboards en Grafana.
 - Endurecimiento de la imagen y políticas de seguridad.
 
+---
+
+## 2026-11-14 — Avance 4: autenticación y roles
+
+### Objetivo del avance
+
+Cerrar el proyecto incorporando control de acceso al panel y a la API, con dos
+roles claros (`admin` y `lector`), manteniendo la simplicidad y sin romper la
+infraestructura, las migraciones, la observabilidad ni el CI/CD ya construidos.
+
+### Actividades realizadas
+
+- [x] **Autenticación por sesión con Flask-Login**: login/logout para el panel y
+  la API, con la misma cookie de sesión firmada por Flask.
+- [x] **Modelo `Usuario`** (`usuarios`) con `nombre`, `email` único,
+  `password_hash`, `rol`, `activo` y `created_at`. Las contraseñas se almacenan
+  con `generate_password_hash` de Werkzeug y nunca se devuelven por la API.
+- [x] **Roles**: `admin` (CRUD completo) y `lector` (solo lectura).
+- [x] **Protección centralizada** (`app/auth.py`): los blueprints académicos
+  exigen sesión y las escrituras exigen rol `admin`; el rechazo es `401` sin
+  sesión y `403` con rol insuficiente.
+- [x] **Rutas públicas**: `/health` y `/metrics` siguen accesibles sin sesión
+  para Docker, Prometheus y el CI.
+- [x] **Panel web**: nueva página `/login`, datos del usuario y su rol en la
+  barra superior, botón de salida y ocultamiento de las acciones de escritura
+  para el rol `lector`. El JavaScript redirige a `/login` si la sesión expira.
+- [x] **Cuentas demo idempotentes** creadas al arrancar (`SEED_USERS`,
+  `SEED_ADMIN_*`, `SEED_VIEWER_*`): `admin@example.com / admin123` y
+  `lector@example.com / lector123`.
+- [x] **Migración `c73f1c202880`** que crea la tabla `usuarios`; se aplicó sobre
+  el volumen existente sin recrear el esquema ni perder datos.
+- [x] **Configuración de sesión**: `SESSION_COOKIE_HTTPONLY`, `SameSite=Lax` y
+  `SESSION_COOKIE_SECURE` configurable para HTTPS.
+- [x] **Redirección segura tras el login**: se valida `next` para evitar
+  redirecciones abiertas.
+- [x] **Pruebas ampliadas a 21 casos**: login correcto/incorrecto, logout,
+  acceso anónimo (`401`), panel redirigido, `lector` en modo lectura (`403`) y
+  `admin` con escritura.
+- [x] **Validación end-to-end** contra MySQL en Docker Compose: login por API y
+  formulario, roles, logout, métricas públicas y UI según rol.
+
+### Decisiones técnicas
+
+| Decisión | Justificación |
+| -------- | ------------- |
+| Sesiones con Flask-Login en vez de tokens | Menor complejidad para una app con panel web y API en el mismo servicio; el navegador ya maneja la cookie. |
+| Dos roles fijos (`admin`, `lector`) | Cubre el requisito de roles sin introducir un sistema de permisos innecesario. |
+| Protección a nivel de blueprint | Evita repetir decoradores en cada endpoint y garantiza que ninguna ruta nueva quede expuesta por olvido. |
+| Escrituras solo para `admin` | El rol `lector` se define de forma consistente en API (`403`) y en la UI (botones ocultos). |
+| `/health` y `/metrics` públicos | Docker, Prometheus y el CI no pueden autenticarse; exponerlos no compromete datos de negocio. |
+| Cuentas demo sembradas desde variables de entorno | Permite probar la demo sin pasos manuales y cambiarlas en producción sin tocar código. |
+| Sin CSRF token ni gestión de usuarios | Se prioriza mantener simple la última fase; el endurecimiento queda como trabajo futuro. |
+
+### Evidencias para la demostración
+
+```bash
+# 1. Levantar el entorno (aplica la migración de usuarios)
+docker compose up -d --build
+
+# 2. Sin sesión: la API responde 401 y el panel redirige al login
+curl -i http://localhost:5000/carreras          # 401
+curl -i http://localhost:5000/                  # 302 -> /login
+
+# 3. Login de administrador y CRUD
+curl -c cookies.txt -X POST http://localhost:5000/login \
+  -H 'Content-Type: application/json' \
+  -d '{"email": "admin@example.com", "password": "admin123"}'
+curl -b cookies.txt http://localhost:5000/carreras
+curl -b cookies.txt -X POST http://localhost:5000/carreras \
+  -H 'Content-Type: application/json' \
+  -d '{"nombre": "Ingeniería Civil", "facultad": "Ingeniería"}'   # 201
+
+# 4. Login de lector: solo lectura
+curl -c lector.txt -X POST http://localhost:5000/login \
+  -H 'Content-Type: application/json' \
+  -d '{"email": "lector@example.com", "password": "lector123"}'
+curl -b lector.txt http://localhost:5000/carreras                 # 200
+curl -b lector.txt -X DELETE http://localhost:5000/carreras/1     # 403
+
+# 5. Logout y métricas públicas
+curl -b cookies.txt -c cookies.txt -X POST http://localhost:5000/logout
+curl -b cookies.txt http://localhost:5000/carreras                # 401
+curl http://localhost:5000/metrics                                # 200
+
+# 6. Panel web
+# http://localhost:5000/  -> admin ve crear/editar/eliminar
+# http://localhost:5000/  -> lector solo consulta
+
+# 7. Pruebas
+docker run --rm -e PYTHONDONTWRITEBYTECODE=1 -v "$PWD":/app -w /app \
+  python:3.12-slim sh -c \
+  "pip install -q -r requirements-dev.txt && python -m pytest -q -p no:cacheprovider"
+# 21 passed
+```
+
+Resultados obtenidos en la validación:
+
+| Verificación | Resultado |
+| ------------ | --------- |
+| Migración sobre volumen existente | `upgrade d948fc81d8ad -> c73f1c202880`; datos intactos |
+| Usuarios sembrados | `admin@example.com` (admin) y `lector@example.com` (lector), activos |
+| API sin sesión | `401` en `/carreras`; `/` redirige a `/login` |
+| Admin | `GET/POST/PATCH/DELETE` permitidos |
+| Lector | `GET` permitido; escrituras `403` |
+| Logout | La cookie deja de dar acceso (`401`) |
+| Públicos | `/health` y `/metrics` siguen en `200` |
+| Panel | Admin ve acciones; lector no las ve |
+| Pruebas | **21 passed** |
+
+### Pendientes / trabajo futuro
+
+- Despliegue documentado usando la imagen publicada en GHCR.
+- Gestión de usuarios desde el panel y cambio de contraseña.
+- Protección CSRF para los formularios.
+- Alertas en Prometheus y dashboards en Grafana (fuera del alcance acordado).
+- Endurecimiento adicional de la imagen y políticas de seguridad.
+
+
 

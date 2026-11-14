@@ -46,8 +46,8 @@ def crear_inscripcion(client, estudiante_id, curso_id, nota=18.5):
     )
 
 
-def test_health(client):
-    respuesta = client.get("/health")
+def test_health(anon_client):
+    respuesta = anon_client.get("/health")
 
     assert respuesta.status_code == 200
     assert respuesta.get_json() == {"status": "ok", "database": "up"}
@@ -61,10 +61,10 @@ def test_interfaz_grafica(client):
     assert b"app.js" in respuesta.data
 
 
-def test_metrics_expone_prometheus(client):
-    client.get("/health")
+def test_metrics_expone_prometheus(anon_client):
+    anon_client.get("/health")
 
-    respuesta = client.get("/metrics")
+    respuesta = anon_client.get("/metrics")
 
     assert respuesta.status_code == 200
     assert respuesta.content_type.startswith("text/plain")

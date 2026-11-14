@@ -4,11 +4,9 @@ Proyecto académico de **DevOps** que evoluciona el CRUD original de Flask hacia
 aplicación contenerizada, con base de datos relacional, healthchecks, datos de
 ejemplo, pruebas automatizadas y CI.
 
-> **Estado: Avance 3.** Se incorporaron migraciones de base de datos con
-> Flask-Migrate/Alembic, observabilidad (logs JSON, request IDs y métricas
-> Prometheus) y publicación automatizada de la imagen en GHCR con escaneo Trivy.
-> El CRUD, la interfaz y la infraestructura de los avances anteriores se
-> mantienen.
+> **Estado: Avance 4 (final).** Se añadió autenticación por sesión con
+> Flask-Login y control de roles (`admin` / `lector`) sobre el panel y la API.
+> Se mantienen las migraciones, la observabilidad y el CI/CD del Avance 3.
 
 ## Arquitectura
 
@@ -39,7 +37,7 @@ ejemplo, pruebas automatizadas y CI.
 
 ## Modelo de datos
 
-Cuatro tablas relacionadas:
+Cuatro tablas de dominio relacionadas y una tabla de usuarios para el acceso:
 
 ```mermaid
 erDiagram
@@ -54,9 +52,12 @@ erDiagram
 | `estudiantes`  | `id`, `nombre`, `apellido`, `email` (único), `carrera_id` (FK), `fecha_registro`     |
 | `cursos`       | `id`, `codigo` (único), `nombre`, `creditos`, `profesor`                             |
 | `inscripciones`| `id`, `estudiante_id` (FK), `curso_id` (FK), `periodo`, `nota`, `fecha_registro`     |
+| `usuarios`     | `id`, `nombre`, `email` (único), `password_hash`, `rol`, `activo`, `created_at`      |
 
 `inscripciones` implementa la relación muchos-a-muchos entre estudiantes y cursos,
 con restricción única por `(estudiante_id, curso_id, periodo)` y `nota` entre 0 y 20.
+`usuarios` almacena únicamente hashes de contraseña (Werkzeug) y roles
+`admin` o `lector`.
 
 ## Puesta en marcha
 
@@ -72,7 +73,11 @@ docker compose up -d --build
 
 # 3. Verificar
 curl http://localhost:5000/health
-curl http://localhost:5000/
+
+# 4. Abrir el panel e iniciar sesión
+#    http://localhost:5000/
+#    admin@example.com / admin123   (rol admin)
+#    lector@example.com / lector123 (solo lectura)
 ```
 
 Servicios:
@@ -95,6 +100,8 @@ Detener sin perder datos: `make down`. Borrar también la base: `make clean` (de
 
 Al iniciar con `SEED_DATA=true` se cargan 3 carreras, 4 cursos, 4 estudiantes y
 5 inscripciones. La carga solo ocurre si la tabla `carreras` está vacía.
+Con `SEED_USERS=true` se crean además las cuentas `admin` y `lector` si sus
+emails no existen; la operación es idempotente y no sobrescribe contraseñas.
 
 ## Migraciones de base de datos
 
@@ -121,6 +128,37 @@ El contenedor ejecuta ese mismo bootstrap en cada arranque, por lo que un
   docker compose run --rm --entrypoint flask app --app app db migrate -m "descripcion"
   docker compose run --rm --entrypoint flask app --app app db upgrade
   ```
+
+## Autenticación y roles
+
+El acceso se gestiona con **Flask-Login** y sesiones firmadas por Flask.
+
+| Rol     | Panel                                        | API                                  |
+| ------- | -------------------------------------------- | ------------------------------------ |
+| `admin` | Ve y modifica todos los recursos             | `GET`, `POST`, `PUT`, `PATCH`, `DELETE` |
+| `lector`| Solo consulta; no ve botones de escritura    | Solo `GET`; las escrituras dan `403` |
+
+- `/login` y `/logout` gestionan la sesión; `/health` y `/metrics` son públicos.
+- Las cuentas demo se crean al arrancar si no existen (`SEED_USERS=true`).
+- Las contraseñas se guardan como hash con Werkzeug; nunca se devuelven por la API.
+- La API usa la misma cookie de sesión que el panel. Ejemplo con `curl`:
+
+  ```bash
+  curl -c cookies.txt -X POST http://localhost:5000/login \
+    -H 'Content-Type: application/json' \
+    -d '{"email": "admin@example.com", "password": "admin123"}'
+
+  curl -b cookies.txt http://localhost:5000/carreras
+
+  curl -b cookies.txt -X POST http://localhost:5000/carreras \
+    -H 'Content-Type: application/json' \
+    -d '{"nombre": "Ingeniería Civil", "facultad": "Ingeniería"}'
+
+  curl -b cookies.txt -X POST http://localhost:5000/logout
+  ```
+
+- Para producción: cambia las contraseñas por variables de entorno, usa HTTPS y
+  activa `SESSION_COOKIE_SECURE=true`.
 
 ## Observabilidad
 
@@ -168,6 +206,9 @@ hay que autenticarse con un token con permiso `read:packages`.
 El panel está disponible en **http://localhost:5000/** y permite:
 
 - Consultar, crear, editar y eliminar carreras, cursos, estudiantes e inscripciones.
+- Iniciar y cerrar sesión; la barra superior muestra el usuario y su rol.
+- El rol `lector` solo ve las tablas: los botones de escritura se ocultan y la
+  API rechaza sus intentos con `403`.
 - Ver los totales por recurso y el estado de la conexión con la base de datos.
 - Usar formularios con validación y mensajes de error devueltos por la API.
 - Diseño responsive, sin dependencias externas ni build step.
@@ -176,11 +217,17 @@ La interfaz vive en `app/templates/` y `app/static/`, y consume la misma API RES
 
 ## Endpoints
 
+Las rutas de datos requieren sesión iniciada. Las escrituras (`POST`, `PUT`,
+`PATCH`, `DELETE`) requieren además rol `admin`.
+
 | Método    | Ruta                     | Descripción                                           |
 | --------- | ------------------------ | ----------------------------------------------------- |
-| GET       | `/`                      | Panel web (HTML)                                      |
-| GET       | `/health`                | Estado de la app y de la conexión a la BD             |
-| GET       | `/metrics`               | Métricas en formato Prometheus                        |
+| GET       | `/login`                 | Formulario de inicio de sesión (HTML)                 |
+| POST      | `/login`                 | Inicia sesión (JSON o formulario)                     |
+| POST      | `/logout`                | Cierra la sesión                                      |
+| GET       | `/`                      | Panel web (HTML, requiere sesión)                     |
+| GET       | `/health`                | Estado de la app y de la conexión a la BD (público)   |
+| GET       | `/metrics`               | Métricas en formato Prometheus (público)              |
 | GET       | `/carreras`              | Lista de carreras                                     |
 | GET       | `/carreras/<id>`         | Detalle de una carrera                                |
 | POST      | `/carreras`              | Crea una carrera (`nombre`, `facultad`)                |
@@ -202,32 +249,43 @@ La interfaz vive en `app/templates/` y `app/static/`, y consume la misma API RES
 | PUT/PATCH | `/inscripciones/<id>`    | Actualiza periodo y/o nota                            |
 | DELETE    | `/inscripciones/<id>`    | Elimina una inscripción                               |
 
-Ejemplos:
+Ejemplos (con la cookie de sesión de un usuario `admin`):
 
 ```bash
-curl -X POST http://localhost:5000/carreras \
+curl -c cookies.txt -X POST http://localhost:5000/login \
+  -H 'Content-Type: application/json' \
+  -d '{"email": "admin@example.com", "password": "admin123"}'
+
+curl -b cookies.txt -X POST http://localhost:5000/carreras \
   -H 'Content-Type: application/json' \
   -d '{"nombre": "Ingeniería de Software", "facultad": "Ingeniería"}'
 
-curl -X POST http://localhost:5000/estudiantes \
+curl -b cookies.txt -X POST http://localhost:5000/estudiantes \
   -H 'Content-Type: application/json' \
   -d '{"nombre": "Ana", "apellido": "Pérez", "email": "ana@example.com", "carrera_id": 1}'
 
-curl -X POST http://localhost:5000/inscripciones \
+curl -b cookies.txt -X POST http://localhost:5000/inscripciones \
   -H 'Content-Type: application/json' \
   -d '{"estudiante_id": 1, "curso_id": 1, "periodo": "2026-II", "nota": 18.5}'
 ```
 
-Errores uniformes: `400` validación, `404` recurso no encontrado, `409` duplicado,
-`503` base de datos no disponible en `/health`.
+Errores uniformes: `400` validación, `401` sin sesión, `403` rol insuficiente,
+`404` recurso no encontrado, `409` duplicado, `503` base de datos no disponible
+en `/health`.
 
 ## Variables de entorno
 
 | Variable              | Defecto                       | Uso                                   |
 | --------------------- | ----------------------------- | ------------------------------------- |
 | `DATABASE_URL`        | SQLite en `instance/`         | Cadena de conexión (acepta `mysql://`)|
-| `SECRET_KEY`          | valor de desarrollo           | Clave de Flask                        |
+| `SECRET_KEY`          | valor de desarrollo           | Clave de Flask y firma de sesiones    |
 | `SEED_DATA`           | `true`                        | Cargar datos de ejemplo               |
+| `SEED_USERS`          | `true`                        | Crear cuentas demo al arrancar        |
+| `SEED_ADMIN_EMAIL`    | `admin@example.com`           | Email de la cuenta administradora     |
+| `SEED_ADMIN_PASSWORD` | `admin123`                    | Contraseña de la cuenta administradora|
+| `SEED_VIEWER_EMAIL`   | `lector@example.com`          | Email de la cuenta de solo lectura    |
+| `SEED_VIEWER_PASSWORD`| `lector123`                   | Contraseña de la cuenta de solo lectura|
+| `SESSION_COOKIE_SECURE`| `false`                      | Cookie `Secure` (activar con HTTPS)   |
 | `LOG_LEVEL`           | `INFO`                        | Nivel de los logs estructurados       |
 | `APP_IMAGE`           | `crud-docker-app:latest`      | Imagen usada por el servicio `app`    |
 | `PROMETHEUS_PORT`     | `9090`                        | Puerto de Prometheus en el host       |
@@ -247,17 +305,18 @@ Errores uniformes: `400` validación, `404` recurso no encontrado, `409` duplica
 crud-docker/
 ├── app/
 │   ├── __init__.py          # Fábrica de la aplicación
+│   ├── auth.py              # Flask-Login, login/logout y control de roles
 │   ├── bootstrap.py         # Migraciones + datos de ejemplo al arrancar
 │   ├── db_migrations.py     # Runner de Alembic con stamp para bases heredadas
 │   ├── extensions.py        # SQLAlchemy + Flask-Migrate
-│   ├── models.py            # 4 modelos relacionales
+│   ├── models.py            # Modelos del dominio + usuarios
 │   ├── observability.py     # Logs JSON, request IDs y métricas Prometheus
-│   ├── seed.py              # Datos de ejemplo idempotentes
+│   ├── seed.py              # Datos de ejemplo y usuarios demo idempotentes
 │   ├── utils.py             # Helpers de validación/errores
 │   ├── wait_for_db.py       # Espera activa de la BD
 │   ├── routes/              # Blueprints: ui, health, carreras, cursos, estudiantes, inscripciones
 │   ├── static/              # CSS y JavaScript de la interfaz
-│   └── templates/           # Plantillas Jinja2 (panel web)
+│   └── templates/           # Plantillas Jinja2 (panel y login)
 ├── migrations/              # Historial de migraciones Alembic
 ├── observability/
 │   └── prometheus.yml       # Scrape de app:5000/metrics
@@ -308,7 +367,7 @@ La bitácora detallada (decisiones, evidencias y pendientes) está en
 
 ## Próximos pasos
 
-- Autenticación y roles para el panel y la API.
-- Despliegue en un entorno con la imagen de GHCR.
-- Alertas en Prometheus y dashboards en Grafana.
+- Despliegue documentado usando la imagen publicada en GHCR.
 - Endurecimiento adicional de la imagen y políticas de seguridad.
+- Gestión de usuarios desde el panel (altas, cambio de rol y contraseña).
+- Alertas en Prometheus y dashboards en Grafana (fuera del alcance actual).

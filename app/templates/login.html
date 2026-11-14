@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+
+{% block title %}Iniciar sesión · Gestión Académica{% endblock %}
+
+{% block content %}
+<section class="login-wrap">
+  <div class="login-card">
+    <p class="eyebrow">Acceso al panel</p>
+    <h1>Iniciar sesión</h1>
+    <p class="muted">
+      Administra la información académica según el rol de tu cuenta.
+    </p>
+
+    {% if error %}
+    <div class="alert alert-error" role="alert">{{ error }}</div>
+    {% endif %}
+
+    <form method="post" action="{{ url_for('auth.login') }}" class="login-form">
+      <input type="hidden" name="next" value="{{ request.args.get('next', '') }}">
+
+      <label class="field">
+        <span>Email</span>
+        <input type="email" name="email" value="{{ email or '' }}" required autofocus autocomplete="username">
+      </label>
+
+      <label class="field">
+        <span>Contraseña</span>
+        <input type="password" name="password" required autocomplete="current-password">
+      </label>
+
+      <button class="btn btn-primary" type="submit">Entrar</button>
+    </form>
+
+    <p class="login-hint muted">
+      Cuentas demo:
+      <strong>{{ config.SEED_ADMIN_EMAIL }}</strong> / {{ config.SEED_ADMIN_PASSWORD }} ·
+      <strong>{{ config.SEED_VIEWER_EMAIL }}</strong> / {{ config.SEED_VIEWER_PASSWORD }}
+    </p>
+  </div>
+</section>
+{% endblock %}
+
+{% block scripts %}{% endblock %}

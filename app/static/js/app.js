@@ -15,6 +15,8 @@ const state = {
   },
 };
 
+const PUEDE_ESCRIBIR = document.body.dataset.role === "admin";
+
 const ENTITIES = {
   estudiantes: {
     singular: "estudiante",
@@ -239,6 +241,11 @@ async function api(path, { method = "GET", body } = {}) {
     return null;
   }
 
+  if (response.status === 401) {
+    window.location.href = "/login";
+    throw new Error("Sesión expirada. Vuelve a iniciar sesión.");
+  }
+
   const payload = await response.json().catch(() => ({}));
 
   if (!response.ok) {
@@ -284,6 +291,7 @@ function renderTabla() {
 
   $("#panel-title").textContent = config.title;
   $("#panel-subtitle").textContent = config.subtitle;
+  $("#create-btn").hidden = !PUEDE_ESCRIBIR;
   $("#create-btn").textContent = `+ Nuevo ${config.singular}`;
 
   const head = $("#table-head");
@@ -297,13 +305,16 @@ function renderTabla() {
     th.textContent = column.label;
     filaCabecera.appendChild(th);
   });
-  const thAcciones = document.createElement("th");
-  thAcciones.textContent = "Acciones";
-  thAcciones.className = "actions-col";
-  filaCabecera.appendChild(thAcciones);
+  if (PUEDE_ESCRIBIR) {
+    const thAcciones = document.createElement("th");
+    thAcciones.textContent = "Acciones";
+    thAcciones.className = "actions-col";
+    filaCabecera.appendChild(thAcciones);
+  }
   head.appendChild(filaCabecera);
 
   $("#empty-state").hidden = items.length > 0;
+  $("#empty-create-btn").hidden = !PUEDE_ESCRIBIR;
 
   items.forEach((item) => {
     const fila = document.createElement("tr");
@@ -316,27 +327,30 @@ function renderTabla() {
       fila.appendChild(td);
     });
 
-    const tdAcciones = document.createElement("td");
-    tdAcciones.className = "actions";
+    if (PUEDE_ESCRIBIR) {
+      const tdAcciones = document.createElement("td");
+      tdAcciones.className = "actions";
 
-    const botonEditar = document.createElement("button");
-    botonEditar.type = "button";
-    botonEditar.className = "btn btn-small btn-ghost";
-    botonEditar.textContent = "Editar";
-    botonEditar.addEventListener("click", () =>
-      abrirDialogo(state.current, item)
-    );
+      const botonEditar = document.createElement("button");
+      botonEditar.type = "button";
+      botonEditar.className = "btn btn-small btn-ghost";
+      botonEditar.textContent = "Editar";
+      botonEditar.addEventListener("click", () =>
+        abrirDialogo(state.current, item)
+      );
 
-    const botonEliminar = document.createElement("button");
-    botonEliminar.type = "button";
-    botonEliminar.className = "btn btn-small btn-danger-ghost";
-    botonEliminar.textContent = "Eliminar";
-    botonEliminar.addEventListener("click", () =>
-      eliminarRegistro(state.current, item)
-    );
+      const botonEliminar = document.createElement("button");
+      botonEliminar.type = "button";
+      botonEliminar.className = "btn btn-small btn-danger-ghost";
+      botonEliminar.textContent = "Eliminar";
+      botonEliminar.addEventListener("click", () =>
+        eliminarRegistro(state.current, item)
+      );
 
-    tdAcciones.append(botonEditar, botonEliminar);
-    fila.appendChild(tdAcciones);
+      tdAcciones.append(botonEditar, botonEliminar);
+      fila.appendChild(tdAcciones);
+    }
+
     body.appendChild(fila);
   });
 }

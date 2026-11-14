@@ -36,6 +36,12 @@ services:
       SECRET_KEY: ${SECRET_KEY:-dev-secret-cambiar-en-produccion}
       DATABASE_URL: "mysql+pymysql://${MYSQL_USER:-devops}:${MYSQL_PASSWORD:-devops123}@db:3306/${MYSQL_DATABASE:-devops_db}?charset=utf8mb4"
       SEED_DATA: ${SEED_DATA:-true}
+      SEED_USERS: ${SEED_USERS:-true}
+      SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL:-admin@example.com}
+      SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-admin123}
+      SEED_VIEWER_EMAIL: ${SEED_VIEWER_EMAIL:-lector@example.com}
+      SEED_VIEWER_PASSWORD: ${SEED_VIEWER_PASSWORD:-lector123}
+      SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-false}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       PROMETHEUS_MULTIPROC_DIR: /tmp/prometheus
     ports:

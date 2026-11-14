@@ -5,6 +5,7 @@ import os
 import click
 from flask import Flask
 
+from .auth import init_auth
 from .extensions import db, migrate
 
 
@@ -23,6 +24,7 @@ def create_app(config_object=None) -> Flask:
     from .observability import init_observability
     from .routes import register_blueprints
 
+    init_auth(app)
     init_observability(app)
     register_blueprints(app)
 
@@ -30,20 +32,22 @@ def create_app(config_object=None) -> Flask:
     def init_db_command() -> None:
         """Aplica migraciones y carga datos de ejemplo (idempotente)."""
         from .db_migrations import run_migrations
-        from .seed import load_seed_data
+        from .seed import ensure_default_users, load_seed_data
 
         run_migrations(app)
         with app.app_context():
             load_seed_data()
-        click.echo("Esquema migrado y datos de ejemplo listos.")
+            ensure_default_users()
+        click.echo("Esquema migrado, datos y usuarios listos.")
 
     @app.cli.command("seed")
     def seed_command() -> None:
-        """Carga datos de ejemplo si la base está vacía."""
-        from .seed import load_seed_data
+        """Carga datos de ejemplo y usuarios demo si no existen."""
+        from .seed import ensure_default_users, load_seed_data
 
         with app.app_context():
             load_seed_data()
-        click.echo("Datos de ejemplo verificados.")
+            ensure_default_users()
+        click.echo("Datos de ejemplo y usuarios verificados.")
 
     return app

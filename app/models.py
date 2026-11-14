@@ -1,6 +1,9 @@
-"""Modelo relacional del dominio académico (4 tablas)."""
+"""Modelo relacional del dominio académico y de usuarios."""
 
 from datetime import datetime, timezone
+
+from flask_login import UserMixin
+from werkzeug.security import check_password_hash, generate_password_hash
 
 from .extensions import db
 
@@ -128,4 +131,41 @@ class Inscripcion(db.Model):
             "periodo": self.periodo,
             "nota": float(self.nota) if self.nota is not None else None,
             "fecha_registro": self.fecha_registro.isoformat(),
+        }
+
+
+class Usuario(UserMixin, db.Model):
+    """Cuenta de acceso al panel y a la API."""
+
+    __tablename__ = "usuarios"
+
+    id = db.Column(db.Integer, primary_key=True)
+    nombre = db.Column(db.String(80), nullable=False)
+    email = db.Column(db.String(120), nullable=False, unique=True)
+    password_hash = db.Column(db.String(255), nullable=False)
+    rol = db.Column(db.String(20), nullable=False, default="lector")
+    activo = db.Column(db.Boolean, nullable=False, default=True)
+    created_at = db.Column(db.DateTime(timezone=True), default=utcnow, nullable=False)
+
+    def set_password(self, password: str) -> None:
+        self.password_hash = generate_password_hash(password)
+
+    def check_password(self, password: str) -> bool:
+        return check_password_hash(self.password_hash, password)
+
+    @property
+    def is_active(self) -> bool:
+        return bool(self.activo)
+
+    @property
+    def is_admin(self) -> bool:
+        return self.rol == "admin"
+
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "nombre": self.nombre,
+            "email": self.email,
+            "rol": self.rol,
+            "activo": self.activo,
         }

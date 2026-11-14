@@ -7,23 +7,35 @@
   <title>{% block title %}Panel DevOps · Gestión Académica{% endblock %}</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
 </head>
-<body>
+<body data-role="{{ current_user.rol if current_user.is_authenticated else 'anon' }}">
   <div class="app-shell">
     <header class="topbar">
       <div class="brand">
         <span class="brand-mark" aria-hidden="true">DV</span>
         <div class="brand-text">
           <strong>Gestión Académica</strong>
-          <span>Proyecto DevOps · Avance 2</span>
+          <span>Proyecto DevOps · Avance 4</span>
         </div>
       </div>
+
       <div class="topbar-actions">
-        <span id="health-badge" class="badge badge-muted">
-          <span class="dot"></span> Verificando...
-        </span>
-        <button id="refresh-btn" class="btn btn-ghost" type="button" title="Recargar datos">
-          ↻ Actualizar
-        </button>
+        {% if current_user.is_authenticated %}
+          <span id="health-badge" class="badge badge-muted">
+            <span class="dot"></span> Verificando...
+          </span>
+          <button id="refresh-btn" class="btn btn-ghost" type="button" title="Recargar datos">
+            ↻ Actualizar
+          </button>
+          <div class="user-box">
+            <span class="user-name">{{ current_user.nombre }}</span>
+            <span class="role-badge role-{{ current_user.rol }}">
+              {{ 'Administrador' if current_user.is_admin else 'Solo lectura' }}
+            </span>
+            <form action="{{ url_for('auth.logout') }}" method="post" class="logout-form">
+              <button class="btn btn-ghost btn-small" type="submit">Salir</button>
+            </form>
+          </div>
+        {% endif %}
       </div>
     </header>
 
@@ -38,6 +50,8 @@
   </div>
 
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+  {% block scripts %}
   <script src="{{ url_for('static', filename='js/app.js') }}" defer></script>
+  {% endblock %}
 </body>
 </html>

@@ -2,7 +2,7 @@
 
 from . import create_app
 from .db_migrations import run_migrations
-from .seed import load_seed_data
+from .seed import ensure_default_users, load_seed_data
 
 
 def main() -> int:
@@ -11,6 +11,7 @@ def main() -> int:
 
     with app.app_context():
         load_seed_data()
+        ensure_default_users()
 
     print("[bootstrap] Base de datos preparada.", flush=True)
     return 0
