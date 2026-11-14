@@ -365,6 +365,14 @@ La configuración de pruebas usa SQLite en memoria y no carga datos de ejemplo.
 La bitácora detallada (decisiones, evidencias y pendientes) está en
 [`docs/avances.md`](docs/avances.md).
 
+## Manual de funcionamiento
+
+El manual en Word con capturas reales de la aplicación está en
+[`docs/Manual_Funcionamiento_Proyecto_DevOps.docx`](docs/Manual_Funcionamiento_Proyecto_DevOps.docx).
+Incluye arquitectura, puesta en marcha, recorrido del panel, API, base de datos,
+observabilidad, CI/CD y resultados de las pruebas. Las imágenes utilizadas se
+guardan en [`docs/capturas/`](docs/capturas/).
+
 ## Próximos pasos
 
 - Despliegue documentado usando la imagen publicada en GHCR.
