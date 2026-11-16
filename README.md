@@ -4,10 +4,6 @@ Proyecto académico de **DevOps** que evoluciona el CRUD original de Flask hacia
 aplicación contenerizada, con base de datos relacional, healthchecks, datos de
 ejemplo, pruebas automatizadas y CI.
 
-> **Estado: Avance 4 (final).** Se añadió autenticación por sesión con
-> Flask-Login y control de roles (`admin` / `lector`) sobre el panel y la API.
-> Se mantienen las migraciones, la observabilidad y el CI/CD del Avance 3.
-
 ## Arquitectura
 
 ```text
@@ -372,10 +368,3 @@ El manual en Word con capturas reales de la aplicación está en
 Incluye arquitectura, puesta en marcha, recorrido del panel, API, base de datos,
 observabilidad, CI/CD y resultados de las pruebas. Las imágenes utilizadas se
 guardan en [`docs/capturas/`](docs/capturas/).
-
-## Próximos pasos
-
-- Despliegue documentado usando la imagen publicada en GHCR.
-- Endurecimiento adicional de la imagen y políticas de seguridad.
-- Gestión de usuarios desde el panel (altas, cambio de rol y contraseña).
-- Alertas en Prometheus y dashboards en Grafana (fuera del alcance actual).
